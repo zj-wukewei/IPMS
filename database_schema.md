@@ -1,11 +1,11 @@
 
 # IPMS 数据库模式设计文档
 
-| 文档版本 | V2.4 |
+| 文档版本 | V3.1 |
 | :--- | :--- |
 | 创建日期 | 2025年9月5日 |
 | 更新日期 | 2025年9月5日 |
-| 状态 | 修订稿 (为类型字段添加枚举注释) |
+| 状态 | 修正版 (恢复所有章节的完整内容) |
 
 ---
 
@@ -15,7 +15,6 @@
 *   **数据一致性:** 数据的引用完整性**由应用层负责**，数据库层面**不设外键约束**。本文档中的枚举值注释是应用层实现的**推荐约定**。
 *   **软删除:** 所有核心实体表均包含 `is_deleted` 字段，所有查询默认应过滤 `is_deleted = false` 的记录。
 *   **主键:** 所有主键统一使用 `bigint` 类型。
-*   **字段类型:** 所有原字典表字段（如状态、类型）直接使用 `varchar` 或 `int` 类型存储。
 
 ---
 
@@ -24,7 +23,7 @@
 ### 2.1. 用户与权限
 
 #### `users`
-*   **用途:** 存储核心认证信息。
+*   **用途:** 存储核心认证信息，保障系统安全。
 
 | 列名 | 数据类型 | 约束 | 描述 |
 | :--- | :--- | :--- | :--- |
@@ -70,7 +69,7 @@
 | `id` | bigint | Primary Key | 技能条目的唯一ID |
 | `user_id` | bigint | NOT NULL | 用户ID (关联 `users.id`) |
 | `skill_name` | VARCHAR(100) | NOT NULL | 技能名称 (e.g., "React", "SQL") |
-| `level` | VARCHAR(20) | NOT NULL | 技能等级 (e.g., "Beginner", "Intermediate", "Expert") |
+| `level` | VARCHAR(20) | NOT NULL | 技能等级 (e.g., "Beginner", "Expert") |
 | `years_of_experience` | DECIMAL(4, 1) | NOT NULL | 使用年限 |
 | `last_used_date` | DATE | NULL | 最后使用日期 |
 | `certifications` | JSONB | NULL | 认证信息 (JSON Array) |
@@ -98,7 +97,7 @@
 | `updated_at` | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
 
 #### `versions`
-*   **用途:** 存储项目的版本信息。
+*   **用途:** 作为需求的集合，定义了一个交付单元。具体的交付计划由`schedules`表管理。
 
 | 列名 | 数据类型 | 约束 | 描述 |
 | :--- | :--- | :--- | :--- |
@@ -108,8 +107,47 @@
 | `description` | TEXT | | 版本的核心价值主张或功能摘要 |
 | `version_type` | VARCHAR(50) | NOT NULL | 版本类型。枚举: `MAJOR`, `MINOR`, `PATCH`, `HOTFIX` |
 | `status` | VARCHAR(50) | NOT NULL | 版本状态。枚举: `PLANNING`, `DEVELOPING`, `TESTING`, `RELEASING`, `RELEASED`, `ARCHIVED` |
-| `planned_start_date` | DATE | NULL | 计划开始日期 |
-| `release_date` | DATE | | 计划或实际的发布日期 |
+| `is_deleted` | BOOLEAN | NOT NULL, DEFAULT FALSE | 是否已删除 |
+| `created_at` | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
+| `updated_at` | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
+
+#### `schedules`
+*   **用途:** 存储一个版本的具体排期计划。一个版本可对应多个排期方案。
+
+| 列名 | 数据类型 | 约束 | 描述 |
+| :--- | :--- | :--- | :--- |
+| `id` | bigint | Primary Key | 排期方案的唯一标识符 |
+| `version_id` | bigint | NOT NULL | 关联的版本ID (关联 `versions.id`) |
+| `schedule_mode` | VARCHAR(50) | NOT NULL | 排期模式。枚举: `RESOURCE_BASED`, `DEADLINE_BASED` |
+| `planned_start_date` | DATE | NOT NULL | 计划开始日期 |
+| `planned_end_date` | DATE | NOT NULL | 计划结束日期 |
+| `actual_start_date` | DATE | NULL | 实际开始日期 |
+| `actual_end_date` | DATE | NULL | 实际结束日期 |
+| `status` | VARCHAR(50) | NOT NULL, DEFAULT 'DRAFT' | 状态。枚举: `DRAFT`, `ACTIVE`, `COMPLETED`, `CANCELLED` |
+| `risk_level` | VARCHAR(50) | NOT NULL, DEFAULT 'LOW' | 风险等级。枚举: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
+| `risk_notes` | TEXT | NULL | 风险说明 |
+| `ai_analysis_result` | JSONB | NULL | AI分析的原始结果或摘要 |
+| `is_deleted` | BOOLEAN | NOT NULL, DEFAULT FALSE | 是否已删除 |
+| `created_at` | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
+| `updated_at` | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
+
+#### `milestones`
+*   **用途:** 存储与某次排期关联的关键里程碑节点。
+
+| 列名 | 数据类型 | 约束 | 描述 |
+| :--- | :--- | :--- | :--- |
+| `id` | bigint | Primary Key | 里程碑的唯一标识符 |
+| `schedule_id` | bigint | NOT NULL | 关联的排期ID (关联 `schedules.id`) |
+| `type` | VARCHAR(100) | NOT NULL | 里程碑类型。枚举: `原型完成时间`, `UI完成时间`, `开发完成时间`, `联调时间`, `测试时间`, `发布时间` |
+| `planned_date` | DATE | NOT NULL | 计划日期 |
+| `actual_date` | DATE | NULL | 实际日期 |
+| `description` | TEXT | NULL | 描述 |
+| `status` | VARCHAR(50) | NOT NULL, DEFAULT 'PENDING' | 状态。枚举: `PENDING`, `IN_PROGRESS`, `COMPLETED`, `AT_RISK` |
+| `completion_percentage` | INT | NOT NULL, DEFAULT 0 | 完成百分比(0-100) |
+| `assignee_id` | bigint | NULL | 负责人ID (关联 `users.id`) |
+| `notes` | TEXT | NULL | 备注 |
+| `is_critical_path` | BOOLEAN | NOT NULL, DEFAULT FALSE | 是否在关键路径上 |
+| `risk_level` | VARCHAR(50) | NOT NULL, DEFAULT 'LOW' | 风险等级。枚举: `LOW`, `MEDIUM`, `HIGH` |
 | `is_deleted` | BOOLEAN | NOT NULL, DEFAULT FALSE | 是否已删除 |
 | `created_at` | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
 | `updated_at` | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | |
@@ -174,5 +212,4 @@
 
 ## 4. 待议题 (Open Questions)
 
-1.  **里程碑的存储:** 如何存储版本的六大里程碑？是作为`versions`表的固定列，还是设计一个独立的`milestones`表以支持自定义？
-2.  **AI历史数据:** 如何高效地存储和检索用于AI输入的`historical_data`？是实时查询聚合，还是建立专门的AI特征表？
+1.  **AI历史数据:** 如何高效地存储和检索用于AI输入的`historical_data`？是实时查询聚合，还是建立专门的AI特征表？
